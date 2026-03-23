@@ -20,15 +20,15 @@ Each COAZ-enabled tool declares an `x-coaz-mapping` in its `inputSchema` that de
       "customer_id": { "type": "string" }
     },
     "x-coaz-mapping": {
-      "resource": [{ "type": "customer", "id": "$properties['customer_id']" }],
-      "subject":  [{ "type": "$token['role']", "id": "$token['sub']" }],
-      "context":  [{ "agent": "$token['client_id']" }]
+      "resource": [{ "type": "customer", "id": "properties.customer_id" }],
+      "subject":  [{ "type": "token.role", "id": "token.sub" }],
+      "context":  [{ "agent": "token.client_id" }]
     }
   }
 }
 ```
 
-When the tool is called, the PEP resolves `$properties[...]` references from the tool arguments and `$token[...]` references from the caller's JWT, then sends the resulting AuthZEN request to the PDP.
+When the tool is called, the PEP evaluates [CEL](https://github.com/google/cel-spec) expressions referencing `properties` (tool arguments) and `token` (caller's JWT claims), then sends the resulting AuthZEN request to the PDP.
 
 ## Demo tools
 
@@ -136,7 +136,7 @@ The MCP server console shows the full authorization flow for each tool call:
 
 1. **`[TOOL]`** — The tool name and arguments
 2. **`[AUTH]`** — JWT verification (subject and role from the token)
-3. **`[COAZ]`** — The `x-coaz-mapping` from the tool definition, then the resolved AuthZEN request with `$properties` and `$token` references replaced by actual values
+3. **`[COAZ]`** — The `x-coaz-mapping` from the tool definition, then the resolved AuthZEN request with CEL expressions evaluated against tool arguments and token claims
 4. **`[PDP]`** — AuthZEN endpoint discovery (on first call)
 5. **`[COAZ]`** — The AuthZEN response with the PDP's decision
 
@@ -161,7 +161,7 @@ src/
   authzen/client.ts     AuthZEN PDP client (discovery + evaluation)
   authzen/types.ts      AuthZEN request/response types
   coaz/pep.ts           Policy Enforcement Point — resolves mappings, calls PDP
-  coaz/resolver.ts      JSONPath resolution of $properties/$token references
+  coaz/resolver.ts      CEL expression resolution of properties/token references
   coaz/schema.ts        Zod validation of x-coaz-mapping
   coaz/types.ts         COAZ type definitions
   tools/                Tool definitions and handlers
