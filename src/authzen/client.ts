@@ -49,20 +49,7 @@ export class AuthZenClient {
     if (!this.evaluationEndpoint) {
       throw new Error("PDP does not advertise access_evaluation_v1 endpoint");
     }
-
-    const response = await fetch(this.evaluationEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `AuthZEN PDP returned ${response.status}: ${await response.text()}`,
-      );
-    }
-
-    return response.json() as Promise<EvaluationResponse>;
+    return this.post<EvaluationResponse>(this.evaluationEndpoint, request);
   }
 
   async evaluations(
@@ -74,11 +61,14 @@ export class AuthZenClient {
         "PDP does not advertise access_evaluations_v1 endpoint",
       );
     }
+    return this.post<EvaluationsResponse>(this.evaluationsEndpoint, request);
+  }
 
-    const response = await fetch(this.evaluationsEndpoint, {
+  private async post<T>(endpoint: string, body: unknown): Promise<T> {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -87,6 +77,6 @@ export class AuthZenClient {
       );
     }
 
-    return response.json() as Promise<EvaluationsResponse>;
+    return response.json() as Promise<T>;
   }
 }

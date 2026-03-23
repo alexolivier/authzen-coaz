@@ -1,11 +1,6 @@
 import { JSONPath } from "jsonpath-plus";
 import type { CoazMapping } from "./types.js";
 
-function queryPath(expression: string, data: object): unknown {
-  const results = JSONPath({ path: expression, json: data, wrap: false });
-  return results;
-}
-
 export function resolveValue(
   value: unknown,
   properties: Record<string, unknown>,
@@ -13,12 +8,12 @@ export function resolveValue(
 ): unknown {
   if (typeof value === "string") {
     if (value.startsWith("$properties")) {
-      const jsonpath = value.replace(/^\$properties/, "$");
-      return queryPath(jsonpath, properties);
+      const path = value.replace(/^\$properties/, "$");
+      return JSONPath({ path, json: properties, wrap: false });
     }
     if (value.startsWith("$token")) {
-      const jsonpath = value.replace(/^\$token/, "$");
-      return queryPath(jsonpath, token);
+      const path = value.replace(/^\$token/, "$");
+      return JSONPath({ path, json: token, wrap: false });
     }
     return value;
   }

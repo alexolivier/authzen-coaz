@@ -32,14 +32,10 @@ export async function enforceCoaz(
   log(`x-coaz-mapping for "${tool.name}"`, rawMapping);
   const resolved = resolveMapping(mapping, tool.name, args, tokenClaims);
 
-  const isMulti = [
-    resolved.subject,
-    resolved.action,
-    resolved.resource,
-    resolved.context,
-  ].some((a) => a.length > 1);
+  const arrays = [resolved.subject, resolved.action, resolved.resource, resolved.context];
+  const multiLength = arrays.map((a) => a.length).find((len) => len > 1);
 
-  if (!isMulti) {
+  if (!multiLength) {
     const request: EvaluationRequest = {
       subject: resolved.subject[0],
       action: resolved.action[0],
@@ -59,15 +55,6 @@ export async function enforceCoaz(
     }
     return;
   }
-
-  const multiLength = [
-    resolved.subject,
-    resolved.action,
-    resolved.resource,
-    resolved.context,
-  ]
-    .map((a) => a.length)
-    .find((len) => len > 1)!;
 
   const request: EvaluationsRequest = { evaluations: [] };
 

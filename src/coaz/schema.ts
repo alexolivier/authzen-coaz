@@ -34,15 +34,6 @@ export const CoazMappingSchema = z
         input: ctx.value,
       });
     }
-    if (!containsTokenRef(subject) && !containsTokenRef(context)) {
-      ctx.issues.push({
-        code: "custom",
-        message:
-          "at least one field across subject and context must reference $token",
-        path: [],
-        input: ctx.value,
-      });
-    }
   });
 
 export const CoazInputSchemaExtension = z.object({
@@ -52,17 +43,6 @@ export const CoazInputSchemaExtension = z.object({
   "x-coaz-mapping": CoazMappingSchema,
 });
 
-export const CoazToolSchema = z.object({
-  name: z.string().min(1),
-  coaz: z.literal(true),
-  description: z.string(),
-  inputSchema: CoazInputSchemaExtension,
-});
-
 export function validateCoazMapping(mapping: unknown): z.infer<typeof CoazMappingSchema> {
   return CoazMappingSchema.parse(mapping);
-}
-
-export function validateCoazTool(tool: unknown): z.infer<typeof CoazToolSchema> {
-  return CoazToolSchema.parse(tool);
 }
