@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 const MappingObject = z.record(z.string(), z.unknown());
 
 function containsTokenRef(obj: unknown): boolean {
-  if (typeof obj === "string") return obj.startsWith("$token");
+  if (typeof obj === "string") return obj.startsWith("token.");
   if (obj !== null && typeof obj === "object" && !Array.isArray(obj)) {
     return Object.values(obj).some(containsTokenRef);
   }
@@ -29,7 +29,7 @@ export const CoazMappingSchema = z
     if (!containsTokenRef(subject)) {
       ctx.issues.push({
         code: "custom",
-        message: "subject must contain at least one $token reference",
+        message: "subject must contain at least one token reference",
         path: ["subject"],
         input: ctx.value,
       });

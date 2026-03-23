@@ -25,17 +25,17 @@ export const transferCustomer: RegisteredTool = {
       "x-coaz-mapping": {
         action: [{ name: "read" }, { name: "write" }],
         resource: [
-          { type: "customer_region", id: "$properties['source_region']" },
-          { type: "customer_region", id: "$properties['destination_region']" },
+          { type: "customer_region", id: "properties.source_region" },
+          { type: "customer_region", id: "properties.destination_region" },
         ],
         subject: [
           {
-            type: "$token['role']",
-            id: "$token['sub']",
-            properties: { department: "$token['department']" },
+            type: "token.role",
+            id: "token.sub",
+            properties: { department: "token.department" },
           },
         ],
-        context: [{ agent: "$token['client_id']" }],
+        context: [{ agent: "token.client_id" }],
       },
     },
   },

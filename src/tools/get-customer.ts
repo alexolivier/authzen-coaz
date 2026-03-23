@@ -15,9 +15,9 @@ export const getCustomer: RegisteredTool = {
       },
       required: ["customer_id"],
       "x-coaz-mapping": {
-        resource: [{ type: "customer", id: "$properties['customer_id']" }],
-        subject: [{ type: "$token['role']", id: "$token['sub']" }],
-        context: [{ agent: "$token['client_id']" }],
+        resource: [{ type: "customer", id: "properties.customer_id" }],
+        subject: [{ type: "token.role", id: "token.sub" }],
+        context: [{ agent: "token.client_id" }],
       },
     },
   },

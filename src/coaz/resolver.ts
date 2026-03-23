@@ -1,4 +1,4 @@
-import { JSONPath } from "jsonpath-plus";
+import { evaluate } from "cel-js";
 import type { CoazMapping } from "./types.js";
 
 export function resolveValue(
@@ -7,13 +7,8 @@ export function resolveValue(
   token: Record<string, unknown>,
 ): unknown {
   if (typeof value === "string") {
-    if (value.startsWith("$properties")) {
-      const path = value.replace(/^\$properties/, "$");
-      return JSONPath({ path, json: properties, wrap: false });
-    }
-    if (value.startsWith("$token")) {
-      const path = value.replace(/^\$token/, "$");
-      return JSONPath({ path, json: token, wrap: false });
+    if (value.startsWith("properties.") || value.startsWith("token.")) {
+      return evaluate(value, { properties, token });
     }
     return value;
   }
