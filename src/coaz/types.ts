@@ -1,27 +1,19 @@
-export interface CoazMapping {
-  subject: Record<string, unknown>[];
-  action?: Record<string, unknown>[];
-  resource: Record<string, unknown>[];
-  context: Record<string, unknown>[];
-}
+import type { z } from "zod/v4";
+import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CoazMappingSchema } from "./schema.js";
 
-export interface CoazToolDefinition {
-  name: string;
+export type CoazMapping = z.infer<typeof CoazMappingSchema>;
+
+export type CoazToolDefinition = Tool & {
   coaz: true;
-  description: string;
-  inputSchema: {
-    type: "object";
+  inputSchema: Tool["inputSchema"] & {
     properties: Record<string, unknown>;
-    required?: string[];
     "x-coaz-mapping": CoazMapping;
   };
-}
+};
 
 export interface ToolHandler {
-  (args: Record<string, unknown>): Promise<{
-    content: Array<{ type: "text"; text: string }>;
-    isError?: boolean;
-  }>;
+  (args: Record<string, unknown>): Promise<CallToolResult>;
 }
 
 export interface RegisteredTool {
