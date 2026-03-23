@@ -1,0 +1,11 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: customer_region
+  rules:
+    - actions: ["read", "write"]
+      effect: EFFECT_ALLOW
+      roles: ["admin"]
+      condition:
+        match:
+          expr: request.principal.attr.department == "platform-ops"
