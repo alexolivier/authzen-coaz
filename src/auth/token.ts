@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { log } from "../log.js";
 
 export interface TokenValidationConfig {
   jwksUri: string;
@@ -20,12 +21,12 @@ export async function verifyAndExtractClaims(
   token: string,
   config: TokenValidationConfig,
 ): Promise<Record<string, unknown>> {
-  console.log(`[AUTH] Verifying JWT (issuer=${config.issuer}, audience=${config.audience})`);
+  log("AUTH", `verifying JWT (issuer=${config.issuer}, audience=${config.audience})`);
   const jwks = getJWKS(config.jwksUri);
   const { payload } = await jwtVerify(token, jwks, {
     issuer: config.issuer,
     audience: config.audience,
   });
-  console.log(`[AUTH] Token verified — sub=${payload.sub}, role=${(payload as Record<string, unknown>).role}`);
+  log("AUTH", `token verified sub=${payload.sub} role=${(payload as Record<string, unknown>).role}`);
   return payload as Record<string, unknown>;
 }

@@ -7,16 +7,7 @@ const EvaluationEntry = z.object({
   resource: MappingObject,
 });
 
-function containsTokenRef(value: unknown): boolean {
-  if (typeof value === "string") {
-    return /(^|[^a-zA-Z0-9_])token(\.|\[)/.test(value);
-  }
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    return Object.values(value).some(containsTokenRef);
-  }
-  if (Array.isArray(value)) return value.some(containsTokenRef);
-  return false;
-}
+const TOKEN_REF = /(^|[^a-zA-Z0-9_])token(\.|\[)/;
 
 export const AuthZenMappingSchema = z
   .object({
@@ -27,7 +18,7 @@ export const AuthZenMappingSchema = z
       .min(1, "evaluations must have at least one entry"),
   })
   .check((ctx) => {
-    if (!containsTokenRef(ctx.value.subject)) {
+    if (!TOKEN_REF.test(JSON.stringify(ctx.value.subject))) {
       ctx.issues.push({
         code: "custom",
         message:
@@ -37,13 +28,6 @@ export const AuthZenMappingSchema = z
       });
     }
   });
-
-export const AuthZenInputSchemaExtension = z.object({
-  type: z.literal("object"),
-  properties: z.record(z.string(), z.unknown()),
-  required: z.array(z.string()).optional(),
-  "x-authzen-mapping": AuthZenMappingSchema,
-});
 
 export function validateAuthZenMapping(
   mapping: unknown,

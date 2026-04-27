@@ -1,99 +1,73 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   ListToolsRequestSchema,
-  McpError,
-  ErrorCode,
+  type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
+import { z } from "zod/v4";
+import { log } from "./log.js";
 import type { AuthZenClient } from "./authzen/client.js";
-import { verifyAndExtractClaims, type TokenValidationConfig } from "./auth/token.js";
-import { enforceCoaz } from "./coaz/pep.js";
+import { validateAuthZenMapping } from "./coaz/schema.js";
 import { tools } from "./tools/registry.js";
-import type { AuthZenMapping } from "./coaz/types.js";
 
 export interface ServerConfig {
   pdpClient: AuthZenClient;
-  token: TokenValidationConfig;
 }
 
-function toolRequiresEvaluations(mapping: AuthZenMapping): boolean {
-  return mapping.evaluations.length > 1;
+function jsonSchemaToZodShape(
+  schema: Tool["inputSchema"],
+): Record<string, z.ZodTypeAny> {
+  const shape: Record<string, z.ZodTypeAny> = {};
+  const required = new Set(schema.required ?? []);
+  for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+    const type = (prop as { type?: string }).type;
+    let field: z.ZodTypeAny = type === "string" ? z.string() : z.unknown();
+    if (!required.has(key)) field = field.optional();
+    shape[key] = field;
+  }
+  return shape;
 }
 
 export async function createServer(config: ServerConfig): Promise<McpServer> {
+  const { pdpClient } = config;
+
+  for (const tool of tools) {
+    const mapping = validateAuthZenMapping(
+      tool.definition.inputSchema["x-authzen-mapping"],
+    );
+    if (mapping.evaluations.length > 1 && !pdpClient.supportsEvaluations) {
+      throw new Error(
+        `Tool "${tool.definition.name}" has multi-valued x-authzen-mapping but PDP does not support the evaluations endpoint`,
+      );
+    }
+  }
+
   const mcpServer = new McpServer(
     { name: "coaz-reference", version: "1.0.0" },
     { capabilities: { tools: {} } },
   );
 
-  const { pdpClient } = config;
-
   for (const tool of tools) {
-    if (tool.definition.coaz) {
-      const mapping = tool.definition.inputSchema["x-authzen-mapping"];
-      if (toolRequiresEvaluations(mapping) && !pdpClient.supportsEvaluations) {
-        throw new Error(
-          `Tool "${tool.definition.name}" has multi-valued x-authzen-mapping but PDP does not support the evaluations endpoint`,
-        );
-      }
-    }
-
-    const inputProps: Record<string, z.ZodTypeAny> = {};
-    const schemaDef = tool.definition.inputSchema;
-    for (const [key, prop] of Object.entries(schemaDef.properties ?? {})) {
-      const p = prop as { type?: string };
-      inputProps[key] =
-        p.type === "string" ? z.string() : z.unknown();
-      if (!schemaDef.required?.includes(key)) {
-        inputProps[key] = inputProps[key].optional();
-      }
-    }
-
     mcpServer.registerTool(
       tool.definition.name,
       {
         description: tool.definition.description,
-        inputSchema: inputProps,
+        inputSchema: jsonSchemaToZodShape(tool.definition.inputSchema),
       },
-      async (args, extra) => {
+      async (args) => {
         const toolCallArgs = (args ?? {}) as Record<string, unknown>;
-        console.log(`\n[TOOL] ${tool.definition.name} called with args:`, JSON.stringify(toolCallArgs));
-
-        if (tool.definition.coaz) {
-          const bearer = extra.authInfo?.token;
-          if (!bearer) {
-            console.log("[TOOL] No bearer token present — rejecting");
-            throw new McpError(ErrorCode.InvalidRequest, "Missing access token");
-          }
-
-          let tokenClaims: Record<string, unknown>;
-          try {
-            tokenClaims = await verifyAndExtractClaims(bearer, config.token);
-          } catch (err) {
-            throw new McpError(
-              ErrorCode.InvalidRequest,
-              `Token validation failed: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-
-          await enforceCoaz(tool.definition, toolCallArgs, tokenClaims, pdpClient);
-        }
-
+        log("TOOL", `${tool.definition.name} called`, toolCallArgs);
         return tool.handler(toolCallArgs);
       },
     );
   }
 
   mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map((t) => {
-      const def = t.definition;
-      return {
-        name: def.name,
-        coaz: def.coaz,
-        description: def.description,
-        inputSchema: def.inputSchema,
-      };
-    }),
+    tools: tools.map((t) => ({
+      name: t.definition.name,
+      coaz: t.definition.coaz,
+      description: t.definition.description,
+      inputSchema: t.definition.inputSchema,
+    })),
   }));
 
   return mcpServer;

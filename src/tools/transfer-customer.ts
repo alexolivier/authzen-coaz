@@ -4,7 +4,8 @@ export const transferCustomer: RegisteredTool = {
   definition: {
     name: "transfer_customer",
     coaz: true,
-    description: "Transfer a customer from one region to another. Requires read on source region and write on destination region. Restricted by department.",
+    description:
+      "Transfer a customer from one region to another. Requires read on source region and write on destination region. Restricted by department.",
     inputSchema: {
       type: "object",
       properties: {

@@ -4,18 +4,14 @@ import type { AuthZenMappingSchema } from "./schema.js";
 
 export type AuthZenMapping = z.infer<typeof AuthZenMappingSchema>;
 
-export type CoazToolDefinition = Tool & {
+export type CoazTool = Tool & {
   coaz: true;
   inputSchema: Tool["inputSchema"] & {
     "x-authzen-mapping": AuthZenMapping;
   };
 };
 
-export interface ToolHandler {
-  (args: Record<string, unknown>): Promise<CallToolResult>;
-}
-
 export interface RegisteredTool {
-  definition: CoazToolDefinition;
-  handler: ToolHandler;
+  definition: CoazTool;
+  handler: (args: Record<string, unknown>) => Promise<CallToolResult>;
 }

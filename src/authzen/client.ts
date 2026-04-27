@@ -1,3 +1,4 @@
+import { log } from "../log.js";
 import type {
   EvaluationRequest,
   EvaluationResponse,
@@ -11,28 +12,20 @@ interface AuthZenConfiguration {
   [key: string]: unknown;
 }
 
-function log(label: string, data: unknown): void {
-  console.log(`\n[PDP] ${label}`);
-  console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2));
-}
-
 export class AuthZenClient {
   private evaluationEndpoint: string | undefined;
   private evaluationsEndpoint: string | undefined;
-  private discoveryDone = false;
 
-  constructor(private baseUrl: string) { }
+  constructor(private baseUrl: string) {}
 
   async discover(): Promise<void> {
-    if (this.discoveryDone) return;
-
     const discoveryUrl = `${this.baseUrl}/.well-known/authzen-configuration`;
-    console.log(`\n[PDP] GET ${discoveryUrl} →`);
+    log("PDP", `GET ${discoveryUrl}`);
     const response = await fetch(discoveryUrl);
 
     if (!response.ok) {
       const body = await response.text();
-      log(`discovery ← ${response.status}`, body);
+      log("PDP", `discovery <- ${response.status}`, body);
       throw new Error(
         `AuthZEN discovery failed at ${discoveryUrl}: ${response.status}`,
       );
@@ -41,11 +34,10 @@ export class AuthZenClient {
     const config = (await response.json()) as AuthZenConfiguration;
     this.evaluationEndpoint = config.access_evaluation_endpoint;
     this.evaluationsEndpoint = config.access_evaluations_endpoint;
-    this.discoveryDone = true;
 
-    log(`discovery ← ${response.status}`, config);
-    console.log(`[PDP] evaluation:  ${this.evaluationEndpoint ?? "not available"}`);
-    console.log(`[PDP] evaluations: ${this.evaluationsEndpoint ?? "not available"}`);
+    log("PDP", `discovery <- ${response.status}`, config);
+    log("PDP", `evaluation:  ${this.evaluationEndpoint ?? "not available"}`);
+    log("PDP", `evaluations: ${this.evaluationsEndpoint ?? "not available"}`);
   }
 
   get supportsEvaluations(): boolean {
@@ -53,7 +45,6 @@ export class AuthZenClient {
   }
 
   async evaluate(request: EvaluationRequest): Promise<EvaluationResponse> {
-    await this.discover();
     if (!this.evaluationEndpoint) {
       throw new Error("PDP does not advertise access_evaluation_v1 endpoint");
     }
@@ -63,7 +54,6 @@ export class AuthZenClient {
   async evaluations(
     request: EvaluationsRequest,
   ): Promise<EvaluationsResponse> {
-    await this.discover();
     if (!this.evaluationsEndpoint) {
       throw new Error(
         "PDP does not advertise access_evaluations_v1 endpoint",
@@ -73,7 +63,7 @@ export class AuthZenClient {
   }
 
   private async post<T>(endpoint: string, body: unknown): Promise<T> {
-    log(`POST ${endpoint} →`, body);
+    log("PDP", `POST ${endpoint} ->`, body);
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -83,14 +73,12 @@ export class AuthZenClient {
 
     if (!response.ok) {
       const errBody = await response.text();
-      log(`POST ${endpoint} ← ${response.status}`, errBody);
-      throw new Error(
-        `AuthZEN PDP returned ${response.status}: ${errBody}`,
-      );
+      log("PDP", `POST ${endpoint} <- ${response.status}`, errBody);
+      throw new Error(`AuthZEN PDP returned ${response.status}: ${errBody}`);
     }
 
     const json = (await response.json()) as T;
-    log(`POST ${endpoint} ← ${response.status}`, json);
+    log("PDP", `POST ${endpoint} <- ${response.status}`, json);
     return json;
   }
 }
