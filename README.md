@@ -66,18 +66,24 @@ Resources and prompts use the **default mappers** in `src/coaz/default-mappings.
 
 ## Demo tools
 
+The PEP always calls the AuthZEN batch `evaluations` endpoint, whether the mapping declares one entry or many. The PDP must advertise `access_evaluations_endpoint` in its `.well-known/authzen-configuration`.
+
 ### `get_customer` — RBAC, single evaluation
 
 Looks up a customer by ID. Demonstrates role-based access control: `admin` and `agent` roles are permitted, `viewer` is denied.
 
-The `x-authzen-mapping` produces a single AuthZEN evaluation request:
+The `x-authzen-mapping` produces an AuthZEN `evaluations` request with one entry:
 
 ```json
 {
-  "subject":  { "type": "agent", "id": "bob@example.com" },
-  "action":   { "name": "get_customer" },
-  "resource":  { "type": "customer", "id": "cust-123" },
-  "context":  { "agent": "support-agent-v2" }
+  "subject": { "type": "agent", "id": "bob@example.com" },
+  "context": { "agent": "support-agent-v2" },
+  "evaluations": [
+    {
+      "action":   { "name": "get_customer" },
+      "resource": { "type": "customer", "id": "cust-123" }
+    }
+  ]
 }
 ```
 
@@ -85,7 +91,7 @@ The `x-authzen-mapping` produces a single AuthZEN evaluation request:
 
 Transfers a customer between regions. Requires `read` on the source region and `write` on the destination region. Demonstrates two things:
 
-**Multi-evaluation** — The mapping declares two entries in the `evaluations` array, so the PEP calls the AuthZEN batch `evaluations` endpoint. Both checks must pass.
+**Multi-evaluation** — The mapping declares two entries in the `evaluations` array. Both checks must pass.
 
 **Attribute-based access control** — The subject's `properties.department` is sourced from the JWT (`token.department`). The PDP policy requires `admin` role AND `department == "platform-ops"`. An admin in the wrong department is denied.
 
@@ -212,7 +218,7 @@ src/
   index.ts              HTTP server, session management
   server.ts             MCP server setup, tool registration
   auth/token.ts         JWT verification via JWKS
-  authzen/client.ts     AuthZEN PDP client (discovery + evaluation)
+  authzen/client.ts     AuthZEN PDP client (discovery + evaluations)
   authzen/types.ts      AuthZEN request/response types
   coaz/pep.ts           Policy Enforcement Point — resolves mappings, calls PDP
   coaz/resolver.ts      CEL expression resolution of properties/token references

@@ -5,15 +5,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod/v4";
 import { log } from "./log.js";
-import type { AuthZenClient } from "./authzen/client.js";
-import { validateAuthZenMapping } from "./coaz/schema.js";
 import { tools } from "./tools/registry.js";
 import { registerReferenceResources } from "./resources/registry.js";
 import { registerReferencePrompts } from "./prompts/registry.js";
-
-export interface ServerConfig {
-  pdpClient: AuthZenClient;
-}
 
 function jsonSchemaToZodShape(
   schema: Tool["inputSchema"],
@@ -29,20 +23,7 @@ function jsonSchemaToZodShape(
   return shape;
 }
 
-export async function createServer(config: ServerConfig): Promise<McpServer> {
-  const { pdpClient } = config;
-
-  for (const tool of tools) {
-    const mapping = validateAuthZenMapping(
-      tool.definition.inputSchema["x-authzen-mapping"],
-    );
-    if (mapping.evaluations.length > 1 && !pdpClient.supportsEvaluations) {
-      throw new Error(
-        `Tool "${tool.definition.name}" has multi-valued x-authzen-mapping but PDP does not support the evaluations endpoint`,
-      );
-    }
-  }
-
+export async function createServer(): Promise<McpServer> {
   const mcpServer = new McpServer(
     { name: "coaz-reference", version: "1.0.0" },
     { capabilities: { tools: {}, resources: {}, prompts: {} } },

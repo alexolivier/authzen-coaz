@@ -1,10 +1,3 @@
-export interface EvaluationRequest {
-  subject: Record<string, unknown>;
-  action: Record<string, unknown>;
-  resource: Record<string, unknown>;
-  context: Record<string, unknown>;
-}
-
 export interface EvaluationResponse {
   decision: boolean;
   context?: { reason?: string };

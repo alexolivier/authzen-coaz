@@ -127,7 +127,6 @@ function toolErrorResult(
   };
 }
 
-const serverConfig = { pdpClient };
 const app = new Hono();
 const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
 
@@ -192,7 +191,7 @@ app.all("/mcp", async (c) => {
     }
   };
 
-  const mcpServer = await createServer(serverConfig);
+  const mcpServer = await createServer();
   await mcpServer.connect(transport);
   return transport.handleRequest(c.req.raw, { authInfo });
 });
