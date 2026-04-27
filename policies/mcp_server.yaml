@@ -1,0 +1,19 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: mcp_server
+  rules:
+    - actions:
+        - "initialize"
+        - "ping"
+        - "tools/list"
+        - "resources/list"
+        - "resources/templates/list"
+        - "prompts/list"
+        - "roots/list"
+        - "tasks/list"
+        - "sampling/createMessage"
+        - "elicitation/create"
+        - "logging/setLevel"
+      effect: EFFECT_ALLOW
+      roles: ["identity"]

@@ -1,9 +1,8 @@
 import { evaluate } from "cel-js";
-import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { AuthZenMapping } from "./types.js";
 
 interface ResolverContext {
-  params: { arguments: Record<string, unknown> };
+  params: Record<string, unknown>;
   token: Record<string, unknown>;
 }
 
@@ -45,13 +44,10 @@ export interface ResolvedMapping {
 
 export function resolveMapping(
   mapping: AuthZenMapping,
-  toolArguments: CallToolRequest["params"]["arguments"] = {},
+  params: Record<string, unknown>,
   tokenClaims: Record<string, unknown>,
 ): ResolvedMapping {
-  const ctx: ResolverContext = {
-    params: { arguments: toolArguments ?? {} },
-    token: tokenClaims,
-  };
+  const ctx: ResolverContext = { params, token: tokenClaims };
   return {
     subject: resolveValue(mapping.subject, ctx) as Record<string, unknown>,
     context: mapping.context

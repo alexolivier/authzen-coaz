@@ -35,7 +35,20 @@ Each COAZ-enabled tool declares an `x-authzen-mapping` in its `inputSchema` that
 }
 ```
 
-Every value in the mapping is a [CEL](https://github.com/google/cel-spec) expression. The PEP evaluates each expression against a context containing `params.arguments` (the MCP tool call arguments) and `token` (the caller's JWT claims). Static values are written as quoted CEL string literals (e.g. `"'customer'"`). If `action` is omitted on an evaluation entry, it defaults to `{ "name": "<tool_name>" }`.
+Every value in the mapping is a [CEL](https://github.com/google/cel-spec) expression. The PEP evaluates each expression against a context containing `params` (the JSON-RPC `params` object — for `tools/call` this exposes `params.arguments` and `params.name`) and `token` (the caller's JWT claims). Static values are written as quoted CEL string literals (e.g. `"'customer'"`). If `action` is omitted on an evaluation entry, it defaults to `{ "name": "<tool_name>" }`.
+
+## Default mappers
+
+Tool-level `x-authzen-mapping` only covers `tools/call`. For every other MCP JSON-RPC method (`initialize`, `tools/list`, `resources/read`, `prompts/get`, `tasks/get`, etc.), the server applies a built-in default mapping defined in `src/coaz/default-mappings.ts`. These follow the conventions in the AuthZEN-MCP profile:
+
+- `subject` is always `{ type: "identity", id: "<JWT sub>" }`.
+- `context.agent` is the JWT `client_id`.
+- `resource` is `mcp_server` (id = `<JWT aud>`) for server-scoped methods, or the specific MCP primitive for resource/prompt/task methods (e.g. `resource.id = params.uri` for `resources/read`).
+- `action.name` is the JSON-RPC method name (or, for the default `tools/call` mapping that fires on non-COAZ tools, the tool name from `params.name`).
+
+Authorization runs at the JSON-RPC layer in `src/index.ts` before the request reaches the MCP SDK. JSON-RPC notifications (no `id` field) skip authorization per the profile. For `tools/call` on a COAZ tool, the per-tool `x-authzen-mapping` overrides the default and runs in the tool handler instead.
+
+The `policies/mcp_server.yaml` Cerbos policy permits framework methods (`initialize`, `ping`, `tools/list`, etc.) for any holder of a valid token. Production deployments would write more restrictive policies.
 
 ## Demo tools
 

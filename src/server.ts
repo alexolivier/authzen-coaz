@@ -5,14 +5,14 @@ import {
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { AuthZenClient } from "./authzen/client.js";
+import type { AuthZenClient } from "./authzen/client.js";
 import { verifyAndExtractClaims, type TokenValidationConfig } from "./auth/token.js";
 import { enforceCoaz } from "./coaz/pep.js";
 import { tools } from "./tools/registry.js";
 import type { AuthZenMapping } from "./coaz/types.js";
 
 export interface ServerConfig {
-  pdpUrl: string;
+  pdpClient: AuthZenClient;
   token: TokenValidationConfig;
 }
 
@@ -26,8 +26,7 @@ export async function createServer(config: ServerConfig): Promise<McpServer> {
     { capabilities: { tools: {} } },
   );
 
-  const pdpClient = new AuthZenClient(config.pdpUrl);
-  await pdpClient.discover();
+  const { pdpClient } = config;
 
   for (const tool of tools) {
     if (tool.definition.coaz) {
