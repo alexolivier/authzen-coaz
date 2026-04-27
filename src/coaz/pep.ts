@@ -1,8 +1,8 @@
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { AuthZenClient } from "../authzen/client.js";
 import type { EvaluationRequest, EvaluationsRequest } from "../authzen/types.js";
 import { resolveMapping } from "./resolver.js";
-import { validateCoazMapping } from "./schema.js";
+import { validateAuthZenMapping } from "./schema.js";
 import type { CoazToolDefinition } from "./types.js";
 
 const UNAUTHORIZED = -32401;
@@ -14,33 +14,35 @@ function log(label: string, data: unknown): void {
 
 export async function enforceCoaz(
   tool: CoazToolDefinition,
-  args: Record<string, unknown>,
+  toolArguments: CallToolRequest["params"]["arguments"] = {},
   tokenClaims: Record<string, unknown>,
   pdpClient: AuthZenClient,
 ): Promise<void> {
-  const rawMapping = tool.inputSchema["x-coaz-mapping"];
+  const rawMapping = tool.inputSchema["x-authzen-mapping"];
   let mapping;
   try {
-    mapping = validateCoazMapping(rawMapping);
+    mapping = validateAuthZenMapping(rawMapping);
   } catch (err) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `Invalid x-coaz-mapping: ${err instanceof Error ? err.message : String(err)}`,
+      `Invalid x-authzen-mapping: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
-  log(`x-coaz-mapping for "${tool.name}"`, rawMapping);
-  const resolved = resolveMapping(mapping, tool.name, args, tokenClaims);
+  log(`x-authzen-mapping for "${tool.name}"`, rawMapping);
+  const resolved = resolveMapping(mapping, toolArguments, tokenClaims);
 
-  const arrays = [resolved.subject, resolved.action, resolved.resource, resolved.context];
-  const multiLength = arrays.map((a) => a.length).find((len) => len > 1);
+  const evaluations = resolved.evaluations.map((entry) => ({
+    action: entry.action ?? { name: tool.name },
+    resource: entry.resource,
+  }));
 
-  if (!multiLength) {
+  if (evaluations.length === 1) {
     const request: EvaluationRequest = {
-      subject: resolved.subject[0],
-      action: resolved.action[0],
-      resource: resolved.resource[0],
-      context: resolved.context[0],
+      subject: resolved.subject,
+      action: evaluations[0].action,
+      resource: evaluations[0].resource,
+      context: resolved.context ?? {},
     };
 
     log("AuthZEN evaluation request →", request);
@@ -56,21 +58,11 @@ export async function enforceCoaz(
     return;
   }
 
-  const request: EvaluationsRequest = { evaluations: [] };
-
-  if (resolved.subject.length === 1) request.subject = resolved.subject[0];
-  if (resolved.action.length === 1) request.action = resolved.action[0];
-  if (resolved.resource.length === 1) request.resource = resolved.resource[0];
-  if (resolved.context.length === 1) request.context = resolved.context[0];
-
-  for (let i = 0; i < multiLength; i++) {
-    const entry: EvaluationsRequest["evaluations"][number] = {};
-    if (resolved.subject.length > 1) entry.subject = resolved.subject[i];
-    if (resolved.action.length > 1) entry.action = resolved.action[i];
-    if (resolved.resource.length > 1) entry.resource = resolved.resource[i];
-    if (resolved.context.length > 1) entry.context = resolved.context[i];
-    request.evaluations.push(entry);
-  }
+  const request: EvaluationsRequest = {
+    subject: resolved.subject,
+    context: resolved.context,
+    evaluations,
+  };
 
   log("AuthZEN evaluations request →", request);
   const response = await pdpClient.evaluations(request);

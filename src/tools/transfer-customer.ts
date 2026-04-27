@@ -22,20 +22,29 @@ export const transferCustomer: RegisteredTool = {
         },
       },
       required: ["customer_id", "source_region", "destination_region"],
-      "x-coaz-mapping": {
-        action: [{ name: "read" }, { name: "write" }],
-        resource: [
-          { type: "customer_region", id: "properties.source_region" },
-          { type: "customer_region", id: "properties.destination_region" },
-        ],
-        subject: [
+      "x-authzen-mapping": {
+        subject: {
+          type: "token.role",
+          id: "token.sub",
+          properties: { department: "token.department" },
+        },
+        context: { agent: "token.client_id" },
+        evaluations: [
           {
-            type: "token.role",
-            id: "token.sub",
-            properties: { department: "token.department" },
+            action: { name: "'read'" },
+            resource: {
+              type: "'customer_region'",
+              id: "params.arguments.source_region",
+            },
+          },
+          {
+            action: { name: "'write'" },
+            resource: {
+              type: "'customer_region'",
+              id: "params.arguments.destination_region",
+            },
           },
         ],
-        context: [{ agent: "token.client_id" }],
       },
     },
   },

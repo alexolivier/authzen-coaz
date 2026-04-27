@@ -1,68 +1,66 @@
 import { evaluate } from "cel-js";
-import type { CoazMapping } from "./types.js";
+import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
+import type { AuthZenMapping } from "./types.js";
 
-export function resolveValue(
-  value: unknown,
-  properties: Record<string, unknown>,
-  token: Record<string, unknown>,
-): unknown {
-  if (typeof value === "string") {
-    if (value.startsWith("properties.") || value.startsWith("token.")) {
-      return evaluate(value, { properties, token });
+interface ResolverContext {
+  params: { arguments: Record<string, unknown> };
+  token: Record<string, unknown>;
+}
+
+function resolveExpression(expr: string, context: ResolverContext): unknown {
+  try {
+    return evaluate(expr, context as unknown as Record<string, unknown>);
+  } catch (err) {
+    if (err instanceof Error && /Identifier .* not found/.test(err.message)) {
+      return undefined;
     }
-    return value;
+    throw err;
   }
+}
 
+function resolveValue(value: unknown, context: ResolverContext): unknown {
+  if (typeof value === "string") return resolveExpression(value, context);
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    const resolved: Record<string, unknown> = {};
+    const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
-      resolved[k] = resolveValue(v, properties, token);
+      const resolved = resolveValue(v, context);
+      if (resolved !== undefined) out[k] = resolved;
     }
-    return resolved;
+    return out;
   }
-
   return value;
 }
 
-function resolveArray(
-  arr: Record<string, unknown>[],
-  properties: Record<string, unknown>,
-  token: Record<string, unknown>,
-): Record<string, unknown>[] {
-  return arr.map(
-    (item) => resolveValue(item, properties, token) as Record<string, unknown>,
-  );
+export interface ResolvedEvaluation {
+  action?: Record<string, unknown>;
+  resource: Record<string, unknown>;
 }
 
 export interface ResolvedMapping {
-  subject: Record<string, unknown>[];
-  action: Record<string, unknown>[];
-  resource: Record<string, unknown>[];
-  context: Record<string, unknown>[];
+  subject: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  evaluations: ResolvedEvaluation[];
 }
 
 export function resolveMapping(
-  mapping: CoazMapping,
-  toolName: string,
-  args: Record<string, unknown>,
+  mapping: AuthZenMapping,
+  toolArguments: CallToolRequest["params"]["arguments"] = {},
   tokenClaims: Record<string, unknown>,
 ): ResolvedMapping {
-  const subject = resolveArray(mapping.subject, args, tokenClaims);
-  const action = mapping.action
-    ? resolveArray(mapping.action, args, tokenClaims)
-    : [{ name: toolName }];
-  const resource = resolveArray(mapping.resource, args, tokenClaims);
-  const context = resolveArray(mapping.context, args, tokenClaims);
-
-  const multiLengths = [subject, action, resource, context]
-    .map((a) => a.length)
-    .filter((len) => len > 1);
-
-  if (multiLengths.length > 0 && new Set(multiLengths).size > 1) {
-    throw new Error(
-      "Multi-element arrays in x-coaz-mapping must all have the same length",
-    );
-  }
-
-  return { subject, action, resource, context };
+  const ctx: ResolverContext = {
+    params: { arguments: toolArguments ?? {} },
+    token: tokenClaims,
+  };
+  return {
+    subject: resolveValue(mapping.subject, ctx) as Record<string, unknown>,
+    context: mapping.context
+      ? (resolveValue(mapping.context, ctx) as Record<string, unknown>)
+      : undefined,
+    evaluations: mapping.evaluations.map((entry) => ({
+      action: entry.action
+        ? (resolveValue(entry.action, ctx) as Record<string, unknown>)
+        : undefined,
+      resource: resolveValue(entry.resource, ctx) as Record<string, unknown>,
+    })),
+  };
 }

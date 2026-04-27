@@ -1,14 +1,13 @@
 import type { z } from "zod/v4";
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { CoazMappingSchema } from "./schema.js";
+import type { AuthZenMappingSchema } from "./schema.js";
 
-export type CoazMapping = z.infer<typeof CoazMappingSchema>;
+export type AuthZenMapping = z.infer<typeof AuthZenMappingSchema>;
 
 export type CoazToolDefinition = Tool & {
   coaz: true;
   inputSchema: Tool["inputSchema"] & {
-    properties: Record<string, unknown>;
-    "x-coaz-mapping": CoazMapping;
+    "x-authzen-mapping": AuthZenMapping;
   };
 };
 

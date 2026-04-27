@@ -1,6 +1,6 @@
 # COAZ Reference MCP Server
 
-A reference implementation of the [AuthZen Profile for Model Context Protocol Tool Authorization](https://github.com/openid/authzen/blob/main/profiles/authzen-mcp-profile-1_0.md) (COAZ). It demonstrates how MCP tools can declare fine-grained authorization requirements via `x-coaz-mapping`, and how a Policy Enforcement Point (PEP) resolves those mappings into [AuthZEN Authorization API](https://openid.net/specs/authorization-api-1_0.html) requests against a Policy Decision Point (PDP).
+A reference implementation of the [AuthZen Profile for Model Context Protocol Tool Authorization](https://github.com/openid/authzen/blob/main/profiles/authzen-mcp-profile-1_0.md) (COAZ). It demonstrates how MCP tools can declare fine-grained authorization requirements via `x-authzen-mapping`, and how a Policy Enforcement Point (PEP) resolves those mappings into [AuthZEN Authorization API](https://openid.net/specs/authorization-api-1_0.html) requests against a Policy Decision Point (PDP).
 
 This demo uses [Cerbos](https://cerbos.dev) as the AuthZEN-compatible PDP.
 
@@ -8,7 +8,7 @@ This demo uses [Cerbos](https://cerbos.dev) as the AuthZEN-compatible PDP.
 
 COAZ (Compatible with OpenID AuthZen, pronounced "cozy") is a standardized mapping from MCP tool definitions and their invocation parameters to the AuthZen Subject-Action-Resource-Context (SARC) model. It enables MCP gateways and servers to perform fine-grained, parameter-level authorization checks before executing MCP tools.
 
-Each COAZ-enabled tool declares an `x-coaz-mapping` in its `inputSchema` that describes how tool arguments and JWT token claims map to an AuthZEN evaluation request:
+Each COAZ-enabled tool declares an `x-authzen-mapping` in its `inputSchema` that describes how tool arguments and JWT token claims map to an AuthZEN evaluation request:
 
 ```json
 {
@@ -19,16 +19,23 @@ Each COAZ-enabled tool declares an `x-coaz-mapping` in its `inputSchema` that de
     "properties": {
       "customer_id": { "type": "string" }
     },
-    "x-coaz-mapping": {
-      "resource": [{ "type": "customer", "id": "properties.customer_id" }],
-      "subject":  [{ "type": "token.role", "id": "token.sub" }],
-      "context":  [{ "agent": "token.client_id" }]
+    "x-authzen-mapping": {
+      "subject": { "type": "token.role", "id": "token.sub" },
+      "context": { "agent": "token.client_id" },
+      "evaluations": [
+        {
+          "resource": {
+            "type": "'customer'",
+            "id": "params.arguments.customer_id"
+          }
+        }
+      ]
     }
   }
 }
 ```
 
-When the tool is called, the PEP evaluates [CEL](https://github.com/google/cel-spec) expressions referencing `properties` (tool arguments) and `token` (caller's JWT claims), then sends the resulting AuthZEN request to the PDP.
+Every value in the mapping is a [CEL](https://github.com/google/cel-spec) expression. The PEP evaluates each expression against a context containing `params.arguments` (the MCP tool call arguments) and `token` (the caller's JWT claims). Static values are written as quoted CEL string literals (e.g. `"'customer'"`). If `action` is omitted on an evaluation entry, it defaults to `{ "name": "<tool_name>" }`.
 
 ## Demo tools
 
@@ -36,7 +43,7 @@ When the tool is called, the PEP evaluates [CEL](https://github.com/google/cel-s
 
 Looks up a customer by ID. Demonstrates role-based access control: `admin` and `agent` roles are permitted, `viewer` is denied.
 
-The `x-coaz-mapping` produces a single AuthZEN evaluation request:
+The `x-authzen-mapping` produces a single AuthZEN evaluation request:
 
 ```json
 {
@@ -51,9 +58,9 @@ The `x-coaz-mapping` produces a single AuthZEN evaluation request:
 
 Transfers a customer between regions. Requires `read` on the source region and `write` on the destination region. Demonstrates two things:
 
-**Multi-evaluation** — The action and resource arrays each have two elements, so the PEP calls the AuthZEN batch `evaluations` endpoint. Both checks must pass.
+**Multi-evaluation** — The mapping declares two entries in the `evaluations` array, so the PEP calls the AuthZEN batch `evaluations` endpoint. Both checks must pass.
 
-**Attribute-based access control** — The subject includes `properties.department` from the JWT. The PDP policy requires `admin` role AND `department == "platform-ops"`. An admin in the wrong department is denied.
+**Attribute-based access control** — The subject's `properties.department` is sourced from the JWT (`token.department`). The PDP policy requires `admin` role AND `department == "platform-ops"`. An admin in the wrong department is denied.
 
 ```json
 {
@@ -136,7 +143,7 @@ The MCP server console shows the full authorization flow for each tool call:
 
 1. **`[TOOL]`** — The tool name and arguments
 2. **`[AUTH]`** — JWT verification (subject and role from the token)
-3. **`[COAZ]`** — The `x-coaz-mapping` from the tool definition, then the resolved AuthZEN request with CEL expressions evaluated against tool arguments and token claims
+3. **`[COAZ]`** — The `x-authzen-mapping` from the tool definition, then the resolved AuthZEN request with CEL expressions evaluated against tool arguments and token claims
 4. **`[PDP]`** — AuthZEN endpoint discovery (on first call)
 5. **`[COAZ]`** — The AuthZEN response with the PDP's decision
 
@@ -162,7 +169,7 @@ src/
   authzen/types.ts      AuthZEN request/response types
   coaz/pep.ts           Policy Enforcement Point — resolves mappings, calls PDP
   coaz/resolver.ts      CEL expression resolution of properties/token references
-  coaz/schema.ts        Zod validation of x-coaz-mapping
+  coaz/schema.ts        Zod validation of x-authzen-mapping
   coaz/types.ts         COAZ type definitions
   tools/                Tool definitions and handlers
 policies/               Cerbos policy files
