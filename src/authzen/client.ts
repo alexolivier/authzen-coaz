@@ -11,6 +11,11 @@ interface AuthZenConfiguration {
   [key: string]: unknown;
 }
 
+function log(label: string, data: unknown): void {
+  console.log(`\n[PDP] ${label}`);
+  console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2));
+}
+
 export class AuthZenClient {
   private evaluationEndpoint: string | undefined;
   private evaluationsEndpoint: string | undefined;
@@ -22,10 +27,12 @@ export class AuthZenClient {
     if (this.discoveryDone) return;
 
     const discoveryUrl = `${this.baseUrl}/.well-known/authzen-configuration`;
-    console.log(`[PDP] Discovering AuthZEN endpoints at ${discoveryUrl}`);
+    console.log(`\n[PDP] GET ${discoveryUrl} →`);
     const response = await fetch(discoveryUrl);
 
     if (!response.ok) {
+      const body = await response.text();
+      log(`discovery ← ${response.status}`, body);
       throw new Error(
         `AuthZEN discovery failed at ${discoveryUrl}: ${response.status}`,
       );
@@ -36,6 +43,7 @@ export class AuthZenClient {
     this.evaluationsEndpoint = config.access_evaluations_endpoint;
     this.discoveryDone = true;
 
+    log(`discovery ← ${response.status}`, config);
     console.log(`[PDP] evaluation:  ${this.evaluationEndpoint ?? "not available"}`);
     console.log(`[PDP] evaluations: ${this.evaluationsEndpoint ?? "not available"}`);
   }
@@ -65,6 +73,8 @@ export class AuthZenClient {
   }
 
   private async post<T>(endpoint: string, body: unknown): Promise<T> {
+    log(`POST ${endpoint} →`, body);
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -72,11 +82,15 @@ export class AuthZenClient {
     });
 
     if (!response.ok) {
+      const errBody = await response.text();
+      log(`POST ${endpoint} ← ${response.status}`, errBody);
       throw new Error(
-        `AuthZEN PDP returned ${response.status}: ${await response.text()}`,
+        `AuthZEN PDP returned ${response.status}: ${errBody}`,
       );
     }
 
-    return response.json() as Promise<T>;
+    const json = (await response.json()) as T;
+    log(`POST ${endpoint} ← ${response.status}`, json);
+    return json;
   }
 }

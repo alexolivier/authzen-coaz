@@ -226,31 +226,48 @@ describe("COAZ MCP Server E2E", () => {
   });
 
   describe("token validation", () => {
-    it("rejects missing token", async () => {
-      const client = await createMcpClient();
-      const result = await client.callTool({ name: "get_customer", arguments: { customer_id: "cust-123" } });
+    it("rejects missing token at initialize", async () => {
+      // #given / #when — default mapper for `initialize` requires a token
+      const res = await rawJsonRpc("initialize", {
+        protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "raw-test", version: "1.0.0" },
+      });
 
-      expect(result.isError).toBe(true);
-      expect((result.content as ToolContent[])[0].text).toContain("Missing access token");
-      await client.close();
+      // #then
+      expect((res.body.error as { code: number }).code).toBe(-32401);
+      expect((res.body.error as { message: string }).message).toContain("Missing access token");
     });
 
-    it("rejects expired token", async () => {
-      const client = await createMcpClient(await mintToken(ADMIN, "-1h"));
-      const result = await client.callTool({ name: "get_customer", arguments: { customer_id: "cust-123" } });
+    it("rejects expired token at initialize", async () => {
+      const res = await rawJsonRpc("initialize", {
+        protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "raw-test", version: "1.0.0" },
+      }, await mintToken(ADMIN, "-1h"));
 
-      expect(result.isError).toBe(true);
-      expect((result.content as ToolContent[])[0].text).toContain("Token validation failed");
-      await client.close();
+      expect((res.body.error as { code: number }).code).toBe(-32401);
+      expect((res.body.error as { message: string }).message).toContain("Token validation failed");
     });
 
-    it("rejects garbage token", async () => {
-      const client = await createMcpClient("not-a-jwt");
-      const result = await client.callTool({ name: "get_customer", arguments: { customer_id: "cust-123" } });
+    it("rejects garbage token at initialize", async () => {
+      const res = await rawJsonRpc("initialize", {
+        protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "raw-test", version: "1.0.0" },
+      }, "not-a-jwt");
 
-      expect(result.isError).toBe(true);
-      expect((result.content as ToolContent[])[0].text).toContain("Token validation failed");
-      await client.close();
+      expect((res.body.error as { code: number }).code).toBe(-32401);
+      expect((res.body.error as { message: string }).message).toContain("Token validation failed");
+    });
+  });
+
+  describe("default mappers", () => {
+    it("permits tools/list with valid identity token", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("tools/list", {}, token, sid);
+
+      // #then — succeeded via default mapper (mcp_server policy permits identity role)
+      expect(res.body.error).toBeUndefined();
+      expect((res.body.result as { tools: unknown[] }).tools.length).toBe(2);
     });
   });
 });

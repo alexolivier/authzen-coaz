@@ -1,9 +1,9 @@
-import { CallToolRequest, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { AuthZenClient } from "../authzen/client.js";
-import type { EvaluationRequest, EvaluationsRequest } from "../authzen/types.js";
+import type { EvaluationsRequest } from "../authzen/types.js";
 import { resolveMapping } from "./resolver.js";
 import { validateAuthZenMapping } from "./schema.js";
-import type { CoazToolDefinition } from "./types.js";
+import type { AuthZenMapping, CoazToolDefinition } from "./types.js";
 
 const UNAUTHORIZED = -32401;
 
@@ -12,14 +12,15 @@ function log(label: string, data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
-export async function enforceCoaz(
-  tool: CoazToolDefinition,
-  toolArguments: CallToolRequest["params"]["arguments"] = {},
+export async function enforceMapping(
+  rawMapping: unknown,
+  defaultActionName: string,
+  params: Record<string, unknown>,
   tokenClaims: Record<string, unknown>,
   pdpClient: AuthZenClient,
+  label: string,
 ): Promise<void> {
-  const rawMapping = tool.inputSchema["x-authzen-mapping"];
-  let mapping;
+  let mapping: AuthZenMapping;
   try {
     mapping = validateAuthZenMapping(rawMapping);
   } catch (err) {
@@ -29,31 +30,25 @@ export async function enforceCoaz(
     );
   }
 
-  log(`x-authzen-mapping for "${tool.name}"`, rawMapping);
-  const resolved = resolveMapping(mapping, toolArguments, tokenClaims);
+  log(`x-authzen-mapping for ${label}`, rawMapping);
+  const resolved = resolveMapping(mapping, params, tokenClaims);
 
   const evaluations = resolved.evaluations.map((entry) => ({
-    action: entry.action ?? { name: tool.name },
+    action: entry.action ?? { name: defaultActionName },
     resource: entry.resource,
   }));
 
   if (evaluations.length === 1) {
-    const request: EvaluationRequest = {
+    const response = await pdpClient.evaluate({
       subject: resolved.subject,
       action: evaluations[0].action,
       resource: evaluations[0].resource,
       context: resolved.context ?? {},
-    };
-
-    log("AuthZEN evaluation request →", request);
-    const response = await pdpClient.evaluate(request);
-    log(`AuthZEN evaluation response ← decision: ${response.decision}`, response);
+    });
+    console.log(`[COAZ] decision for ${label}: ${response.decision}`);
 
     if (!response.decision) {
-      throw new McpError(
-        UNAUTHORIZED,
-        response.context?.reason ?? "Access denied",
-      );
+      throw new McpError(UNAUTHORIZED, response.context?.reason ?? "Access denied");
     }
     return;
   }
@@ -64,16 +59,28 @@ export async function enforceCoaz(
     evaluations,
   };
 
-  log("AuthZEN evaluations request →", request);
   const response = await pdpClient.evaluations(request);
   const decisions = response.evaluations.map((e) => e.decision);
-  log(`AuthZEN evaluations response ← decisions: [${decisions.join(", ")}]`, response);
+  console.log(`[COAZ] decisions for ${label}: [${decisions.join(", ")}]`);
 
   const denied = response.evaluations.find((e) => !e.decision);
   if (denied) {
-    throw new McpError(
-      UNAUTHORIZED,
-      denied.context?.reason ?? "Access denied",
-    );
+    throw new McpError(UNAUTHORIZED, denied.context?.reason ?? "Access denied");
   }
+}
+
+export async function enforceCoaz(
+  tool: CoazToolDefinition,
+  toolArguments: Record<string, unknown> = {},
+  tokenClaims: Record<string, unknown>,
+  pdpClient: AuthZenClient,
+): Promise<void> {
+  await enforceMapping(
+    tool.inputSchema["x-authzen-mapping"],
+    tool.name,
+    { name: tool.name, arguments: toolArguments },
+    tokenClaims,
+    pdpClient,
+    `tool "${tool.name}"`,
+  );
 }
