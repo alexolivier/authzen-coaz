@@ -1,0 +1,11 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: prompt
+  rules:
+    - actions: ["prompts/get"]
+      effect: EFFECT_ALLOW
+      roles: ["identity"]
+      condition:
+        match:
+          expr: request.resource.id == "summarize_customer"

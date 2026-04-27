@@ -270,4 +270,128 @@ describe("COAZ MCP Server E2E", () => {
       expect((res.body.result as { tools: unknown[] }).tools.length).toBe(2);
     });
   });
+
+  describe("resources", () => {
+    it("lists registered resources", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("resources/list", {}, token, sid);
+
+      // #then
+      const result = res.body.result as { resources: { uri: string }[] };
+      const uris = result.resources.map((r) => r.uri);
+      expect(uris).toContain("doc://public/readme");
+      expect(uris).toContain("doc://internal/runbook");
+      expect(uris).toContain("customers://index");
+    });
+
+    it("lists resource templates", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("resources/templates/list", {}, token, sid);
+
+      // #then
+      const result = res.body.result as { resourceTemplates: { uriTemplate: string }[] };
+      expect(result.resourceTemplates.map((t) => t.uriTemplate)).toContain("customer://{id}");
+    });
+
+    it("permits read of public doc", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("resources/read", { uri: "doc://public/readme" }, token, sid);
+
+      // #then
+      expect(res.body.error).toBeUndefined();
+      const result = res.body.result as { contents: { text: string }[] };
+      expect(result.contents[0].text).toContain("Public documentation");
+    });
+
+    it("denies read of internal doc", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("resources/read", { uri: "doc://internal/runbook" }, token, sid);
+
+      // #then
+      expect((res.body.error as { code: number }).code).toBe(-32401);
+    });
+
+    it("permits read of templated customer resource", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("resources/read", { uri: "customer://cust-123" }, token, sid);
+
+      // #then
+      expect(res.body.error).toBeUndefined();
+      const result = res.body.result as { contents: { text: string }[] };
+      expect(JSON.parse(result.contents[0].text).id).toBe("cust-123");
+    });
+  });
+
+  describe("prompts", () => {
+    it("lists registered prompts", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("prompts/list", {}, token, sid);
+
+      // #then
+      const result = res.body.result as { prompts: { name: string }[] };
+      const names = result.prompts.map((p) => p.name);
+      expect(names).toContain("summarize_customer");
+      expect(names).toContain("incident_report");
+    });
+
+    it("permits get of allowed prompt", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc(
+        "prompts/get",
+        { name: "summarize_customer", arguments: { customer_id: "cust-123" } },
+        token,
+        sid,
+      );
+
+      // #then
+      expect(res.body.error).toBeUndefined();
+      const result = res.body.result as { messages: { content: { text: string } }[] };
+      expect(result.messages[0].content.text).toContain("cust-123");
+    });
+
+    it("denies get of restricted prompt", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc(
+        "prompts/get",
+        { name: "incident_report", arguments: { incident_id: "inc-1" } },
+        token,
+        sid,
+      );
+
+      // #then
+      expect((res.body.error as { code: number }).code).toBe(-32401);
+    });
+  });
 });

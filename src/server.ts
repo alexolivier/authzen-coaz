@@ -8,6 +8,8 @@ import { log } from "./log.js";
 import type { AuthZenClient } from "./authzen/client.js";
 import { validateAuthZenMapping } from "./coaz/schema.js";
 import { tools } from "./tools/registry.js";
+import { registerReferenceResources } from "./resources/registry.js";
+import { registerReferencePrompts } from "./prompts/registry.js";
 
 export interface ServerConfig {
   pdpClient: AuthZenClient;
@@ -43,8 +45,11 @@ export async function createServer(config: ServerConfig): Promise<McpServer> {
 
   const mcpServer = new McpServer(
     { name: "coaz-reference", version: "1.0.0" },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, resources: {}, prompts: {} } },
   );
+
+  registerReferenceResources(mcpServer);
+  registerReferencePrompts(mcpServer);
 
   for (const tool of tools) {
     mcpServer.registerTool(

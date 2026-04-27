@@ -1,0 +1,18 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: resource
+  rules:
+    - actions:
+        - "resources/read"
+        - "resources/subscribe"
+        - "resources/unsubscribe"
+      effect: EFFECT_ALLOW
+      roles: ["identity"]
+      condition:
+        match:
+          any:
+            of:
+              - expr: request.resource.id.startsWith("doc://public/")
+              - expr: request.resource.id.startsWith("customers://")
+              - expr: request.resource.id.startsWith("customer://")
