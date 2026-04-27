@@ -327,6 +327,20 @@ describe("COAZ MCP Server E2E", () => {
       expect((res.body.error as { code: number }).code).toBe(-32401);
     });
 
+    it("permits read of customers index", async () => {
+      // #given
+      const token = await mintToken(ADMIN);
+      const sid = await initSession(token);
+
+      // #when
+      const res = await rawJsonRpc("resources/read", { uri: "customers://index" }, token, sid);
+
+      // #then
+      expect(res.body.error).toBeUndefined();
+      const result = res.body.result as { contents: { text: string }[] };
+      expect(JSON.parse(result.contents[0].text)[0].id).toBe("cust-123");
+    });
+
     it("permits read of templated customer resource", async () => {
       // #given
       const token = await mintToken(ADMIN);

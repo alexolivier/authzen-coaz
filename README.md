@@ -50,6 +50,20 @@ Authorization runs at the JSON-RPC layer in `src/index.ts` before the request re
 
 The `policies/mcp_server.yaml` Cerbos policy permits framework methods (`initialize`, `ping`, `tools/list`, etc.) for any holder of a valid token. Production deployments would write more restrictive policies.
 
+## Demo MCP primitives
+
+The reference server exposes one example of each MCP primitive that supports server-side authorization, so each AuthZEN check is exercised end-to-end against the PDP.
+
+| Primitive | Method(s) gated | What it demonstrates |
+|-----------|-----------------|----------------------|
+| Tool | `tools/call` | Per-tool `x-authzen-mapping` (RBAC and ABAC + multi-evaluation) |
+| Resource (static) | `resources/read` | Default mapper checks `resource.id = params.uri` per URI |
+| Resource (template) | `resources/read` | Same default mapper applied to a templated URI like `customer://{id}` |
+| Prompt | `prompts/get` | Default mapper checks `resource.id = params.name` per prompt name |
+| Server-scoped methods | `initialize`, `ping`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, … | Default mapper checks `resource = mcp_server` |
+
+Resources and prompts use the **default mappers** in `src/coaz/default-mappings.ts` rather than declaring their own `x-authzen-mapping` — that's how the AuthZEN-MCP profile expects most non-tool primitives to work. Per-item authorization comes from the Cerbos policies, which match on `request.resource.id` (the URI / prompt name).
+
 ## Demo tools
 
 ### `get_customer` — RBAC, single evaluation
@@ -85,6 +99,26 @@ Transfers a customer between regions. Requires `read` on the source region and `
   ]
 }
 ```
+
+## Demo resources
+
+Three static resources plus a template, all gated by the default `resources/read` mapper. The `policies/resource.yaml` policy permits the `identity` role only when `request.resource.id` (the URI) starts with `doc://public/`, `customers://`, or `customer://`.
+
+| URI | Allowed |
+|-----|---------|
+| `doc://public/readme` | yes |
+| `doc://internal/runbook` | denied |
+| `customers://index` | yes |
+| `customer://{id}` (template, e.g. `customer://cust-123`) | yes |
+
+## Demo prompts
+
+Two prompts gated by the default `prompts/get` mapper. The `policies/prompt.yaml` policy permits the `identity` role only when `request.resource.id` (the prompt name) is `summarize_customer`.
+
+| Prompt | Allowed |
+|--------|---------|
+| `summarize_customer` | yes |
+| `incident_report` | denied |
 
 ## Demo personas
 
@@ -185,6 +219,8 @@ src/
   coaz/schema.ts        Zod validation of x-authzen-mapping
   coaz/types.ts         COAZ type definitions
   tools/                Tool definitions and handlers
+  resources/            Reference resources (static + template)
+  prompts/              Reference prompts
 policies/               Cerbos policy files
 scripts/tokens.ts       Token generation + JWKS server
 test/e2e.test.ts        End-to-end tests
