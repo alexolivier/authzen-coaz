@@ -12,6 +12,7 @@ function resolveExpression(expr: string, context: ResolverContext): unknown {
     return evaluate(expr, context as unknown as Record<string, unknown>);
   } catch (err) {
     if (err instanceof Error && /Identifier .* not found/.test(err.message)) {
+      console.warn(`[COAZ] CEL expression "${expr}" resolved to undefined: ${err.message}`);
       return undefined;
     }
     throw err;
