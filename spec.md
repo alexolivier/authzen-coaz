@@ -28,8 +28,14 @@ author:
 normative:
   RFC2119:
   RFC8174:
-  RFC6901:
   RFC7519:
+  CEL:
+    title: "Common Expression Language Specification"
+    target: https://github.com/google/cel-spec
+    author:
+      -
+        name: Google
+    date: 2025
   AUTHZEN:
     title: "Authorization API 1.0"
     target: https://openid.net/specs/authorization-api-1_0.html
@@ -294,118 +300,147 @@ AuthZen compatible because it does not include a `coaz` field.
 
 ## Overview
 
-For COAZ tools, the `inputSchema` object MUST include
-an `x-coaz-mapping` field. This field contains a JSON object whose fields are arrays that define how
-the tool's input parameters and the caller's access token map to the AuthZen
+For COAZ tools, the `inputSchema` object MUST include an `x-authzen-mapping`
+field. This field contains a JSON object that defines how the tool's input
+parameters and the caller's access token claims map to the AuthZen
 information model entities: Subject, Action, Resource, and Context.
 
-## Mapping Variables {#mapping-variables}
+Every string value within the `x-authzen-mapping` object is interpreted
+as a Common Expression Language {{CEL}} expression. The PEP evaluates each
+expression against a context populated from the tool call arguments and the
+verified access token (see {{evaluation-context}}). Static string values
+MUST be expressed as quoted CEL string literals (e.g. `"'customer'"`).
 
-Values within the `x-coaz-mapping` object MAY reference elements from the
-tool invocation using the following variables:
+## Evaluation Context {#evaluation-context}
 
-`$properties`:
-: Refers to the `properties` field of the `inputSchema` of the tool object.
-  Individual properties within this variable are referenced using JSON
-  Pointer {{RFC6901}} notation adapted for JSONPath.
+The CEL evaluation context exposes two top-level identifiers:
 
-`$token`:
-: Refers to the JWT-formatted {{RFC7519}} OAuth access token used to authorize
-  the tool call. Claims within the token are referenced using JSONPath
-  notation.
+`params`:
+: An object whose `arguments` field is the `params.arguments` object of
+  the JSON-RPC `tools/call` request — i.e. the arguments supplied by
+  the MCP client. Individual arguments are referenced using CEL
+  identifier or index syntax (e.g. `params.arguments.customer_id`,
+  `params.arguments["customer-id"]`).
 
-Fields within these variables MUST be referred to using JSONPath expressions.
+`token`:
+: An object whose fields are the claims of the JWT-formatted {{RFC7519}}
+  OAuth access token used to authorize the tool call. Claims are
+  referenced using CEL identifier or index syntax (e.g. `token.sub`,
+  `token["https://example.com/role"]`).
+
+If a CEL expression references an identifier that is not present in the
+context (e.g. an absent token claim), the resolved value MUST be treated
+as undefined and the corresponding field MUST be omitted from the
+constructed AuthZen request. PEPs SHOULD log such occurrences so that
+authoring mistakes (e.g. typo in a CEL expression) are observable.
 
 ## Mapping Object Schema {#mapping-schema}
 
-The `x-coaz-mapping` object MUST contain the following fields:
+The `x-authzen-mapping` object MUST contain the following fields:
 
 `subject`:
-: REQUIRED. An array of JSON objects describing how to construct the `subject`
-  parameter of the AuthZen Access Evaluation API request. At least one field
-  of the `subject` MUST be derived from the `$.token` variable.
-
-`action`:
-: OPTIONAL. An array of JSON objects describing how to construct the `action`
-  parameter of the AuthZen Access Evaluation API request. If this field is
-  absent, the PEP MUST use a single-element array containing `{"name": "<tool name>"}`, where `<tool name>` is the name of the MCP tool.
-
-`resource`:
-: REQUIRED. An array of JSON objects describing how to construct the `resource`
-  parameter of the AuthZen Access Evaluation API request. The object MAY
-  contain static values and/or JSONPath references to tool input properties
-  and token claims.
+: REQUIRED. A JSON object describing how to construct the `subject`
+  parameter of the AuthZen Access Evaluation request. At least one
+  CEL expression within the `subject` object MUST reference the
+  `token` identifier. This requirement pins the AuthZEN subject
+  identity to the verified JWT and prevents a tool definition from
+  asserting an arbitrary hardcoded identity.
 
 `context`:
-: REQUIRED. An array of JSON objects describing how to construct the `context`
-  parameter of the AuthZen Access Evaluation API request. For autonomous
-  agent use cases, the `context` MUST include the identity of the agent.
-  At least one field of either the `subject` or the `context` MUST be
-  derived from the `$.token` variable.
+: OPTIONAL. A JSON object describing how to construct the `context`
+  parameter of the AuthZen Access Evaluation request. For autonomous
+  agent use cases, the `context` SHOULD include the identity of the
+  agent (e.g. `{"agent": "token.client_id"}`).
 
-At least one field across the `subject` and `context` parameters MUST be
-derived from the `$token` variable.
+`evaluations`:
+: REQUIRED. A non-empty array of evaluation entries. Each entry is a
+  JSON object containing an optional `action` field and a REQUIRED
+  `resource` field. Each entry produces one authorization check.
+
+Each entry of the `evaluations` array has the following shape:
+
+`action`:
+: OPTIONAL. A JSON object describing how to construct the `action`
+  parameter for this evaluation. If this field is absent, the PEP MUST
+  use `{"name": "<tool name>"}`, where `<tool name>` is the name of the
+  MCP tool.
+
+`resource`:
+: REQUIRED. A JSON object describing how to construct the `resource`
+  parameter for this evaluation.
 
 ## Processing Rules {#processing-rules}
-The following rules MUST be used to construct the Authorization API request from the above mapping object:
 
-* If all fields specified in a mapping have arrays with a single element in them, then the `evaluation` API is called.
-* If any field has an array with more than one element, then the `evaluations` API is called.
-* If the PDP does not support the `evaluations` API and there is at least one field with more than one element in the COAZ mapping, then the PEP MUST give an error when it discovers the tool descriptions. This can be at initialization or in response to the `tools/list` call, depending on when it can access the description.
-* All fields with single element arrays are specified outside of the `evaluations` array in the `evaluations` API request.
-* If the `action` field is missing, it is assumed to be a single-element array containing `{"name": "<tool name>"}`, where `<tool name>` is the MCP tool name.
-* All fields that have more than one element in the array values MUST have the same number of elements. A PEP MUST give an error if this is not the case.
-* All fields with more than one element are specified inside the `evaluations` array in the `evaluations` API request. Each successive element of the `evaluations` array contains the successive value from each multi-valued field.
+The following rules MUST be used to construct the Authorization API request
+from the mapping object:
+
+* The PEP MUST evaluate every string value in the mapping as a CEL
+  expression against the context defined in {{evaluation-context}}.
+  Object structure (keys, nesting) is preserved verbatim; only string
+  values are evaluated.
+* When an evaluated expression resolves to undefined (e.g. due to an
+  absent token claim), the PEP MUST omit the corresponding key from the
+  resulting object.
+* If the `evaluations` array contains exactly one entry, the PEP MUST
+  call the AuthZen Access Evaluation API. The resolved `subject`,
+  `context`, the entry's resolved `resource`, and the entry's resolved
+  `action` (or the default `{"name": "<tool name>"}` if absent) are
+  used as the top-level fields of the request.
+* If the `evaluations` array contains more than one entry, the PEP MUST
+  call the AuthZen Access Evaluations API. The resolved `subject` and
+  `context` are placed at the top level of the request, and each entry
+  produces one element of the `evaluations` array of the request, each
+  containing the entry's resolved `action` and `resource`.
+* If the PDP does not support the Access Evaluations API and the
+  mapping contains more than one evaluation entry, the PEP MUST give an
+  error when it discovers the tool description. This MAY be at
+  initialization or in response to the `tools/list` call, depending on
+  when the PEP can access the description.
 
 ## Schema
 
-The schema of the `x-coaz-mapping` object is as follows:
+The schema of the `x-authzen-mapping` object is as follows:
 
 ~~~ json
 {
   "type": "object",
-  "required": ["subject", "resource", "context"],
+  "required": ["subject", "evaluations"],
   "properties": {
     "subject": {
-      "type": "array",
-      "description": "Array of subjects requesting access, as defined in {{AUTHZEN}}",
-      "items": {
-        "type": "object",
-        "description": "Subject object as specified in Section 3.2 of {{AUTHZEN}}"
-      }
-    },
-    "action": {
-      "type": "array",
-      "description": "Array of actions to be performed on the resources (optional)",
-      "items": {
-        "type": "object",
-        "description": "Action object as specified in Section 3.3 of {{AUTHZEN}}"
-      }
-    },
-    "resource": {
-      "type": "array",
-      "description": "Array of resources to be accessed, as defined in {{AUTHZEN}}",
-      "items": {
-        "type": "object",
-        "description": "Resource object as specified in Section 3.1 of {{AUTHZEN}}"
-      }
+      "type": "object",
+      "description": "Subject object as specified in Section 3.2 of {{AUTHZEN}}, with string values interpreted as CEL expressions"
     },
     "context": {
+      "type": "object",
+      "description": "Context object as specified in Section 3.4 of {{AUTHZEN}}, with string values interpreted as CEL expressions"
+    },
+    "evaluations": {
       "type": "array",
-      "description": "Array of contextual information relevant to the authorization decision",
+      "minItems": 1,
+      "description": "One or more authorization checks to perform",
       "items": {
         "type": "object",
-        "description": "Context object as specified in Section 3.4 of {{AUTHZEN}}"
+        "required": ["resource"],
+        "properties": {
+          "action": {
+            "type": "object",
+            "description": "Action object as specified in Section 3.3 of {{AUTHZEN}}, with string values interpreted as CEL expressions. Defaults to {\"name\": \"<tool name>\"} if absent."
+          },
+          "resource": {
+            "type": "object",
+            "description": "Resource object as specified in Section 3.1 of {{AUTHZEN}}, with string values interpreted as CEL expressions"
+          }
+        }
       }
     }
   }
 }
 ~~~
 
-## Single-valued Example {#mapping-single-example}
+## Single-evaluation Example {#mapping-single-example}
 
 The following is a non-normative example of a complete tool definition with
-a COAZ mapping:
+an `x-authzen-mapping` that produces a single evaluation:
 
 ~~~ json
 {
@@ -429,19 +464,23 @@ a COAZ mapping:
               "description": "The case being worked on by the agent"
             }
           },
-          "x-coaz-mapping": {
-            "resource": [{
-              "id": "$properties['id']",
-              "type": "customer"
-            }],
-            "subject": [{
-              "type": "user",
-              "id": "$token['sub']"
-            }],
-            "context": [{
-              "agent": "$token['client_id']",
-              "case": "$properties['case']"
-            }]
+          "x-authzen-mapping": {
+            "subject": {
+              "type": "'user'",
+              "id": "token.sub"
+            },
+            "context": {
+              "agent": "token.client_id",
+              "case": "params.arguments.case"
+            },
+            "evaluations": [
+              {
+                "resource": {
+                  "type": "'customer'",
+                  "id": "params.arguments.id"
+                }
+              }
+            ]
           }
         }
       }
@@ -453,18 +492,23 @@ a COAZ mapping:
 
 In this example:
 
-- The `resource` is constructed with a static `type` value of `"customer"` and the `id` taken from the tool's `id`
-  input property.
+- Static values such as `'user'` and `'customer'` are written as quoted
+  CEL string literals.
 
-- The `subject` is constructed with a static `type` value of `"user"` and the
-  `id` taken from the `sub` claim of the access token.
+- The `resource` `id` is taken from the tool's `id` input argument via
+  `params.arguments.id`.
+
+- The `subject` `id` is taken from the `sub` claim of the access token
+  via `token.sub`. The expression `token.sub` satisfies the requirement
+  in {{mapping-schema}} that the `subject` reference at least one
+  `token.*` value.
 
 - The `context` includes the `client_id` claim from the access token as
-  the agent identifier, and the `case` input property from the tool
+  the agent identifier, and the `case` input argument from the tool
   invocation.
 
-- The `action` is not specified in the mapping, so the PEP constructs it
-  as `{"name": "get_customer"}` using the tool name.
+- The single entry in `evaluations` does not specify `action`, so the
+  PEP constructs it as `{"name": "get_customer"}` using the tool name.
 
 The resulting AuthZen Access Evaluation API request would be:
 
@@ -489,13 +533,14 @@ The resulting AuthZen Access Evaluation API request would be:
 ~~~
 {: #fig-authzen-request title="Resulting AuthZen Access Evaluation request"}
 
-## Multi-valued Example {#mapping-multi-example}
+## Multi-evaluation Example {#mapping-multi-example}
 
-The following is a non-normative example of a tool that copies an object from
-one storage location to another. The operation requires two distinct privileges:
-`read` access on the source location and `write` access on the destination
-location. These are expressed as two entries in the action and resource arrays of
-the x-coaz-mapping object. The `subject` and `context` are the same for both checks and are therefore each a single-element array:
+The following is a non-normative example of a tool that copies an object
+from one storage location to another. The operation requires two distinct
+privileges: `read` access on the source location and `write` access on the
+destination location. These are expressed as two entries in the
+`evaluations` array of the `x-authzen-mapping` object. The `subject` and
+`context` apply to both checks and are factored out at the top level:
 
 ~~~ json
 {
@@ -519,22 +564,30 @@ the x-coaz-mapping object. The `subject` and `context` are the same for both che
               "description": "The destination object location"
             }
           },
-          "x-coaz-mapping": {
-            "action": [
-              { "name": "read" },
-              { "name": "write" }
-            ],
-            "resource": [
-              { "type": "storage_object", "id": "$properties['source']" },
-              { "type": "storage_object", "id": "$properties['destination']" }
-            ],
-            "subject": [{
-              "type": "user",
-              "id": "$token['sub']"
-            }],
-            "context": [{
-              "agent": "$token['client_id']"
-            }]
+          "x-authzen-mapping": {
+            "subject": {
+              "type": "'user'",
+              "id": "token.sub"
+            },
+            "context": {
+              "agent": "token.client_id"
+            },
+            "evaluations": [
+              {
+                "action": { "name": "'read'" },
+                "resource": {
+                  "type": "'storage_object'",
+                  "id": "params.arguments.source"
+                }
+              },
+              {
+                "action": { "name": "'write'" },
+                "resource": {
+                  "type": "'storage_object'",
+                  "id": "params.arguments.destination"
+                }
+              }
+            ]
           }
         }
       }
@@ -542,24 +595,25 @@ the x-coaz-mapping object. The `subject` and `context` are the same for both che
   }
 }
 ~~~
-{: #fig-coaz-multi-example title="Example COAZ tool definition with multi-valued mapping"}
+{: #fig-coaz-multi-example title="Example COAZ tool definition with multi-evaluation mapping"}
 
 In this example:
 
-- The `action` array has two elements: `read` for the source and `write` for
-  the destination.
+- The `evaluations` array has two entries: one for `read` on the source
+  location and one for `write` on the destination location.
 
-- The `resource` array has two elements: the source location and the
-  destination location, each taken from the corresponding tool input property.
+- The `subject` and `context` are defined once at the top level, as the
+  same caller identity and agent context apply to both privilege checks.
 
-- The `subject` and `context` arrays each have a single element, as the same
-  caller identity and agent context apply to both privilege checks.
+- Static action and resource type values are expressed as quoted CEL
+  string literals (e.g. `'read'`, `'storage_object'`).
 
-Because `action` and `resource` each contain more than one element, the
-Processing Rules require the PEP to call the AuthZen Access Evaluations API.
-The single-element `subject` and `context` values are placed at the top level
-of the request as defaults. The resulting AuthZen Access Evaluations API
-request would be:
+Because the `evaluations` array contains more than one entry, the
+Processing Rules require the PEP to call the AuthZen Access Evaluations
+API. The resolved `subject` and `context` are placed at the top level of
+the request, and each entry produces one element of the request's
+`evaluations` array. The resulting AuthZen Access Evaluations API request
+would be:
 
 ~~~ json
 {
@@ -590,13 +644,17 @@ request would be:
 
 When a COAZ tool is invoked, the PEP MUST:
 
-1. Parse the `x-coaz-mapping` from the tool's `inputSchema`.
+1. Parse the `x-authzen-mapping` from the tool's `inputSchema`.
 
-2. Resolve all JSONPath references against the tool call's input arguments
-   (for `$.properties` references) and the access token (for `$.token`
-   references).
+2. Build the CEL evaluation context defined in {{evaluation-context}} from
+   the tool call's input arguments and the verified access token claims.
 
-3. Construct the AuthZen Access Evaluation or Evaluations API request according to the processing rules described in {{processing-rules}} using the resolved values.
+3. Evaluate every string value in the mapping as a CEL expression against
+   that context, omitting any field whose expression resolves to undefined.
+
+4. Construct the AuthZen Access Evaluation or Evaluations API request
+   according to the processing rules described in {{processing-rules}}
+   using the resolved values.
 
 4. Send the request to the configured AuthZen PDP.
 
@@ -667,10 +725,10 @@ supporting zero-trust architectures for AI agent interactions.
 
 ## Token Integrity
 
-The access token referenced by `$token` MUST be validated by the PEP before
-extracting claims for the AuthZen request. The PEP MUST verify the token
-signature, issuer, audience, and expiration in accordance with {{RFC7519}}
-and the OAuth framework in use.
+The access token whose claims are exposed via the `token` CEL identifier
+MUST be validated by the PEP before extracting claims for the AuthZen
+request. The PEP MUST verify the token signature, issuer, audience, and
+expiration in accordance with {{RFC7519}} and the OAuth framework in use.
 
 ## Transport Security
 
@@ -679,10 +737,21 @@ specified in the transport requirements of {{AUTHZEN}}.
 
 ## Mapping Integrity
 
-The `x-coaz-mapping` is provided by the MCP server as part of the tool
-definition. MCP clients and gateways that act as PEPs SHOULD validate that
-the mapping is well-formed and that all referenced properties exist in the
-tool's `inputSchema` before constructing the AuthZen request.
+The `x-authzen-mapping` is provided by the MCP server as part of the tool
+definition. MCP clients and gateways that act as PEPs SHOULD validate
+that the mapping is well-formed, that all `params.arguments.*` references
+correspond to properties declared in the tool's `inputSchema`, and that
+the `subject` field contains at least one `token.*` reference (see
+{{mapping-schema}}) before constructing the AuthZen request.
+
+## Subject Identity Pinning
+
+The `subject` field of the `x-authzen-mapping` MUST contain at least one
+CEL expression that references the `token` identifier. This requirement
+prevents a tool definition from asserting an arbitrary hardcoded subject
+identity in the AuthZen request, which would allow a malicious or buggy
+mapping to silently impersonate another principal. PEPs MUST reject
+mappings that do not satisfy this requirement.
 
 # IANA Considerations
 
@@ -703,10 +772,10 @@ tool definitions and OAuth access tokens.
 ## Model Context Protocol
 
 This specification extends the MCP {{MCP}} tool definition schema by
-introducing the `coaz` field and the `x-coaz-mapping` extension to the
-`inputSchema` object. These extensions are designed to be backward compatible
-with existing MCP implementations; servers and clients that do not understand
-COAZ will simply ignore these fields.
+introducing the `coaz` field and the `x-authzen-mapping` extension to the
+`inputSchema` object. These extensions are designed to be backward
+compatible with existing MCP implementations; servers and clients that do
+not understand COAZ will simply ignore these fields.
 
 ## OAuth 2.1
 
@@ -721,9 +790,9 @@ each tool invocation.
 ## Opt-in Complexity
 
 The COAZ mapping is entirely optional. MCP servers that do not require
-fine-grained authorization are not required to implement or understand the
-`x-coaz-mapping` schema. This ensures that the profile does not impose
-unnecessary complexity on simple deployments.
+fine-grained authorization are not required to implement or understand
+the `x-authzen-mapping` schema. This ensures that the profile does not
+impose unnecessary complexity on simple deployments.
 
 ## Leveraging Standards
 
@@ -735,11 +804,12 @@ policy evaluation to external, purpose-built policy engines.
 
 ## Declarative Mapping
 
-The `x-coaz-mapping` replaces ad-hoc, implementation-specific authorization
-code that developers would otherwise embed in tool handlers. By formalizing
-the mapping as a declarative schema, authorization intent becomes
-machine-readable and can be processed by gateways and proxies without
-requiring knowledge of the tool's internal implementation.
+The `x-authzen-mapping` replaces ad-hoc, implementation-specific
+authorization code that developers would otherwise embed in tool
+handlers. By formalizing the mapping as a declarative schema with CEL
+expressions, authorization intent becomes machine-readable and can be
+processed by gateways and proxies without requiring knowledge of the
+tool's internal implementation.
 
 # Acknowledgements
 

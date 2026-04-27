@@ -2,47 +2,51 @@ import { z } from "zod/v4";
 
 const MappingObject = z.record(z.string(), z.unknown());
 
-function containsTokenRef(obj: unknown): boolean {
-  if (typeof obj === "string") return obj.startsWith("$token");
-  if (obj !== null && typeof obj === "object" && !Array.isArray(obj)) {
-    return Object.values(obj).some(containsTokenRef);
+const EvaluationEntry = z.object({
+  action: MappingObject.optional(),
+  resource: MappingObject,
+});
+
+function containsTokenRef(value: unknown): boolean {
+  if (typeof value === "string") {
+    return /(^|[^a-zA-Z0-9_])token(\.|\[)/.test(value);
   }
-  if (Array.isArray(obj)) return obj.some(containsTokenRef);
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return Object.values(value).some(containsTokenRef);
+  }
+  if (Array.isArray(value)) return value.some(containsTokenRef);
   return false;
 }
 
-export const CoazMappingSchema = z
+export const AuthZenMappingSchema = z
   .object({
-    subject: z
-      .array(MappingObject)
-      .min(1, "subject must have at least one element"),
-    action: z.array(MappingObject).optional(),
-    resource: z
-      .array(MappingObject)
-      .min(1, "resource must have at least one element"),
-    context: z
-      .array(MappingObject)
-      .min(1, "context must have at least one element"),
+    subject: MappingObject,
+    context: MappingObject.optional(),
+    evaluations: z
+      .array(EvaluationEntry)
+      .min(1, "evaluations must have at least one entry"),
   })
   .check((ctx) => {
-    const { subject, context } = ctx.value;
-    if (!containsTokenRef(subject)) {
+    if (!containsTokenRef(ctx.value.subject)) {
       ctx.issues.push({
         code: "custom",
-        message: "subject must contain at least one $token reference",
+        message:
+          "subject must contain at least one CEL expression referencing token.* — pinning the AuthZEN subject identity to the verified JWT",
         path: ["subject"],
         input: ctx.value,
       });
     }
   });
 
-export const CoazInputSchemaExtension = z.object({
+export const AuthZenInputSchemaExtension = z.object({
   type: z.literal("object"),
   properties: z.record(z.string(), z.unknown()),
   required: z.array(z.string()).optional(),
-  "x-coaz-mapping": CoazMappingSchema,
+  "x-authzen-mapping": AuthZenMappingSchema,
 });
 
-export function validateCoazMapping(mapping: unknown): z.infer<typeof CoazMappingSchema> {
-  return CoazMappingSchema.parse(mapping);
+export function validateAuthZenMapping(
+  mapping: unknown,
+): z.infer<typeof AuthZenMappingSchema> {
+  return AuthZenMappingSchema.parse(mapping);
 }

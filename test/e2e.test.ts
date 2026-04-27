@@ -140,7 +140,7 @@ describe("COAZ MCP Server E2E", () => {
       const result = res.body.result as { tools: Record<string, unknown>[] };
       expect(result.tools.length).toBe(2);
       expect(result.tools.every((t) => t.coaz === true)).toBe(true);
-      expect(result.tools.every((t) => (t.inputSchema as Record<string, unknown>)["x-coaz-mapping"])).toBe(true);
+      expect(result.tools.every((t) => (t.inputSchema as Record<string, unknown>)["x-authzen-mapping"])).toBe(true);
     });
   });
 

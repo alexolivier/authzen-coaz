@@ -9,15 +9,15 @@ import { AuthZenClient } from "./authzen/client.js";
 import { verifyAndExtractClaims, type TokenValidationConfig } from "./auth/token.js";
 import { enforceCoaz } from "./coaz/pep.js";
 import { tools } from "./tools/registry.js";
+import type { AuthZenMapping } from "./coaz/types.js";
 
 export interface ServerConfig {
   pdpUrl: string;
   token: TokenValidationConfig;
 }
 
-function toolRequiresEvaluations(mapping: { subject: unknown[]; action?: unknown[]; resource: unknown[]; context: unknown[] }): boolean {
-  return [mapping.subject, mapping.action, mapping.resource, mapping.context]
-    .some((arr) => arr !== undefined && arr.length > 1);
+function toolRequiresEvaluations(mapping: AuthZenMapping): boolean {
+  return mapping.evaluations.length > 1;
 }
 
 export async function createServer(config: ServerConfig): Promise<McpServer> {
@@ -31,17 +31,17 @@ export async function createServer(config: ServerConfig): Promise<McpServer> {
 
   for (const tool of tools) {
     if (tool.definition.coaz) {
-      const mapping = tool.definition.inputSchema["x-coaz-mapping"];
+      const mapping = tool.definition.inputSchema["x-authzen-mapping"];
       if (toolRequiresEvaluations(mapping) && !pdpClient.supportsEvaluations) {
         throw new Error(
-          `Tool "${tool.definition.name}" has multi-valued x-coaz-mapping but PDP does not support the evaluations endpoint`,
+          `Tool "${tool.definition.name}" has multi-valued x-authzen-mapping but PDP does not support the evaluations endpoint`,
         );
       }
     }
 
     const inputProps: Record<string, z.ZodTypeAny> = {};
     const schemaDef = tool.definition.inputSchema;
-    for (const [key, prop] of Object.entries(schemaDef.properties)) {
+    for (const [key, prop] of Object.entries(schemaDef.properties ?? {})) {
       const p = prop as { type?: string };
       inputProps[key] =
         p.type === "string" ? z.string() : z.unknown();
@@ -57,8 +57,8 @@ export async function createServer(config: ServerConfig): Promise<McpServer> {
         inputSchema: inputProps,
       },
       async (args, extra) => {
-        const toolArgs = (args ?? {}) as Record<string, unknown>;
-        console.log(`\n[TOOL] ${tool.definition.name} called with args:`, JSON.stringify(toolArgs));
+        const toolCallArgs = (args ?? {}) as Record<string, unknown>;
+        console.log(`\n[TOOL] ${tool.definition.name} called with args:`, JSON.stringify(toolCallArgs));
 
         if (tool.definition.coaz) {
           const bearer = extra.authInfo?.token;
@@ -77,10 +77,10 @@ export async function createServer(config: ServerConfig): Promise<McpServer> {
             );
           }
 
-          await enforceCoaz(tool.definition, toolArgs, tokenClaims, pdpClient);
+          await enforceCoaz(tool.definition, toolCallArgs, tokenClaims, pdpClient);
         }
 
-        return tool.handler(toolArgs);
+        return tool.handler(toolCallArgs);
       },
     );
   }

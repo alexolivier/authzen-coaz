@@ -12,9 +12,9 @@
   "dependencies": {
     "@hono/node-server": "^1.14.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "cel-js": "^0.8.2",
     "hono": "^4.7.0",
     "jose": "^6.0.11",
-    "jsonpath-plus": "^10.4.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
